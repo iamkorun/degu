@@ -1,0 +1,29 @@
+[package]
+name = "degu"
+version = "0.1.0"
+edition = "2021"
+description = "Infer JSON Schema, TypeScript interfaces, and Zod schemas from sample JSON"
+license = "MIT"
+repository = "https://github.com/iamkorun/degu"
+readme = "README.md"
+keywords = ["json", "schema", "typescript", "zod", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+
+[lib]
+name = "degu"
+path = "src/lib.rs"
+
+[[bin]]
+name = "degu"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+is-terminal = "0.4"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
