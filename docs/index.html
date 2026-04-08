@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>degu 🐹 — infer JSON Schema, TypeScript, and Zod from sample JSON</title>
+<meta name="description" content="degu is a tiny Rust CLI that digs through sample JSON and infers the full shape — JSON Schema, TypeScript interfaces, or Zod schemas. Stop hand-writing types for undocumented APIs." />
+<link rel="canonical" href="https://iamkorun.github.io/degu" />
+
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://iamkorun.github.io/degu" />
+<meta property="og:title" content="degu — infer JSON Schema and TypeScript from sample JSON" />
+<meta property="og:description" content="A small rodent that digs through your JSON and hands you clean types. JSON Schema, TypeScript, or Zod — in one command." />
+<meta property="og:image" content="https://opengraph.githubassets.com/1/iamkorun/degu" />
+
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="degu — infer types from sample JSON" />
+<meta name="twitter:description" content="Infer JSON Schema, TypeScript interfaces, and Zod schemas from sample JSON. Pure Rust, zero config." />
+<meta name="twitter:image" content="https://opengraph.githubassets.com/1/iamkorun/degu" />
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='80' font-size='80'%3E🐹%3C/text%3E%3C/svg%3E" />
+
+<link rel="preconnect" href="https://api.fontshare.com" crossorigin />
+<link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@500,700,800&f[]=jetbrains-mono@400,500&display=swap" rel="stylesheet" />
+
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        ink:    '#1C1A17',
+        ink2:   '#221F1B',
+        ink3:   '#2A2622',
+        cream:  '#F4ECD8',
+        sage:   '#A8C3A0',
+        butter: '#F4D58D',
+        peach:  '#FFB783',
+        terra:  '#E07856',
+      },
+      fontFamily: {
+        display: ['"Cabinet Grotesk"', 'system-ui', 'sans-serif'],
+        mono:    ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+      },
+    },
+  },
+}
+</script>
+
+<style>
+  html { scroll-behavior: smooth; }
+  html, body { background:#1C1A17; color:#F4ECD8; }
+  body { overflow-x: clip; font-family:'Cabinet Grotesk', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  code, pre { font-family:'JetBrains Mono', ui-monospace, monospace; }
+
+  .grain::before {
+    content:''; position:fixed; inset:0; pointer-events:none; z-index:1;
+    background-image: radial-gradient(rgba(168,195,160,0.04) 1px, transparent 1px);
+    background-size: 3px 3px; mix-blend-mode: overlay;
+  }
+
+  section[id] { scroll-margin-top: 5rem; }
+  .tap:active { transform: scale(0.97); }
+
+  [data-fade] { opacity: 0; transform: translateY(20px); transition: opacity 700ms ease, transform 700ms ease; }
+  [data-fade].is-visible { opacity: 1; transform: translateY(0); }
+
+  ::selection { background: #A8C3A0; color: #1C1A17; }
+
+  /* tiny, pre-rendered "syntax highlighting" via class colors */
+  .tok-k { color:#FFB783; }      /* keyword  */
+  .tok-t { color:#A8C3A0; }      /* type     */
+  .tok-s { color:#F4D58D; }      /* string   */
+  .tok-n { color:#E07856; }      /* number   */
+  .tok-p { color:#8B8680; }      /* punct    */
+  .tok-c { color:#6B655E; font-style: italic; } /* comment */
+  .tok-v { color:#F4ECD8; }      /* ident    */
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    * { animation: none !important; transition: none !important; }
+    [data-fade] { opacity: 1 !important; transform: none !important; }
+  }
+</style>
+</head>
+
+<body class="grain antialiased">
+
+<!-- ───────────────────────── sticky nav ───────────────────────── -->
+<header class="sticky top-0 z-40 backdrop-blur-md bg-ink/80 border-b border-stone-900">
+  <div class="max-w-5xl mx-auto flex items-center justify-between px-5 md:px-8 py-2">
+    <a href="#top" class="flex items-center gap-2.5 py-3 font-display font-bold text-lg tracking-tight">
+      <svg viewBox="0 0 32 32" class="w-7 h-7 shrink-0" aria-hidden="true">
+        <ellipse cx="16" cy="19" rx="11" ry="9" fill="#A8C3A0"/>
+        <circle cx="9" cy="11" r="3" fill="#A8C3A0"/>
+        <circle cx="23" cy="11" r="3" fill="#A8C3A0"/>
+        <circle cx="9" cy="11" r="1.3" fill="#1C1A17"/>
+        <circle cx="23" cy="11" r="1.3" fill="#1C1A17"/>
+        <circle cx="12" cy="17" r="1.6" fill="#1C1A17"/>
+        <circle cx="20" cy="17" r="1.6" fill="#1C1A17"/>
+        <circle cx="12.4" cy="16.5" r="0.45" fill="#F4ECD8"/>
+        <circle cx="20.4" cy="16.5" r="0.45" fill="#F4ECD8"/>
+        <ellipse cx="16" cy="20.5" rx="1.6" ry="1.1" fill="#E07856"/>
+        <path d="M14 22 Q 16 24 18 22" stroke="#1C1A17" stroke-width="0.9" fill="none" stroke-linecap="round"/>
+        <line x1="9" y1="18" x2="5.5" y2="17.5" stroke="#1C1A17" stroke-width="0.6" stroke-linecap="round"/>
+        <line x1="9" y1="19" x2="5.5" y2="19.5" stroke="#1C1A17" stroke-width="0.6" stroke-linecap="round"/>
+        <line x1="23" y1="18" x2="26.5" y2="17.5" stroke="#1C1A17" stroke-width="0.6" stroke-linecap="round"/>
+        <line x1="23" y1="19" x2="26.5" y2="19.5" stroke="#1C1A17" stroke-width="0.6" stroke-linecap="round"/>
+      </svg>
+      <span class="text-sage">degu</span>
+      <span class="hidden min-[400px]:inline text-stone-600 text-xs font-mono font-normal">v0.1.0</span>
+    </a>
+    <nav class="flex items-center gap-1 sm:gap-2 md:gap-3 text-xs md:text-sm font-mono text-stone-400">
+      <a href="#what" class="hover:text-sage transition px-2 sm:px-3 py-3.5">docs</a>
+      <a href="#install" class="hover:text-sage transition px-2 sm:px-3 py-3.5">install</a>
+      <a href="https://github.com/iamkorun/degu" class="hover:text-sage transition px-2 sm:px-3 py-3.5">github</a>
+      <a href="https://buymeacoffee.com/iamkorun" class="hidden sm:inline-flex items-center hover:text-sage transition px-3 py-3.5" aria-label="Buy Me a Coffee">☕</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- ───────────────────────── hero ───────────────────────── -->
+<section class="relative z-10 px-5 md:px-8 pt-16 md:pt-24 pb-20 md:pb-28">
+  <div class="max-w-4xl mx-auto text-center">
+    <p class="font-mono text-[0.65rem] md:text-xs uppercase tracking-[0.2em] text-terra mb-6 md:mb-8">
+      a small rodent that digs through your JSON
+    </p>
+
+    <h1 class="font-display font-extrabold text-[2.75rem] sm:text-6xl md:text-7xl lg:text-[5.5rem] leading-[0.9] tracking-tight text-cream mb-6 md:mb-7">
+      infer types from<br/>
+      <span class="text-sage">sample JSON</span>.
+    </h1>
+
+    <p class="text-base md:text-lg lg:text-xl text-stone-400 max-w-2xl mx-auto leading-relaxed mb-10 md:mb-12">
+      A tiny Rust CLI that reads JSON — from a file or a pipe — and emits a
+      <code class="text-butter">JSON Schema</code>,
+      a <code class="text-butter">TypeScript</code> interface, or a
+      <code class="text-butter">Zod</code> schema. Merge several samples and it figures out which fields are optional.
+    </p>
+
+    <!-- BIG install pill -->
+    <div class="max-w-2xl mx-auto">
+      <button id="copy-btn" type="button"
+        class="tap group w-full flex items-center justify-between gap-4 bg-ink2 border border-stone-700 hover:border-sage focus-visible:border-sage focus-visible:outline-none transition rounded-xl px-5 py-5 md:px-6 md:py-6 text-left shadow-[0_0_0_1px_rgba(168,195,160,0)] hover:shadow-[0_0_0_1px_rgba(168,195,160,0.15)]"
+        aria-label="Copy install command to clipboard">
+        <code class="text-cream text-sm md:text-base lg:text-lg break-all min-w-0 flex-1 leading-relaxed">
+          <span class="text-stone-500 select-none">$&nbsp;</span>cargo install degu
+        </code>
+        <span id="copy-label" class="text-xs md:text-sm font-mono text-stone-500 group-hover:text-sage shrink-0 flex items-center gap-1.5">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          <span id="copy-text">copy</span>
+        </span>
+      </button>
+    </div>
+
+    <div class="mt-7 md:mt-8 flex flex-wrap justify-center items-center gap-4 md:gap-5">
+      <a href="#install"
+        class="tap inline-flex items-center gap-2 bg-sage text-ink font-display font-bold px-5 py-3 rounded-md hover:bg-butter transition">
+        read the docs
+        <span aria-hidden="true">→</span>
+      </a>
+      <a href="https://github.com/iamkorun/degu"
+        class="tap inline-flex items-center gap-2 font-mono text-sm text-stone-400 hover:text-sage transition px-4 py-3"
+        aria-label="View degu on GitHub">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.11.82-.26.82-.58v-2.13c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.75.09-.73.09-.73 1.2.08 1.83 1.24 1.83 1.24 1.08 1.84 2.81 1.31 3.5 1 .1-.78.42-1.31.76-1.61-2.66-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.81 5.63-5.49 5.93.43.37.81 1.1.81 2.22v3.29c0 .32.2.7.82.58A12 12 0 0 0 12 .3"/></svg>
+        <span>github</span>
+        <img src="https://img.shields.io/github/stars/iamkorun/degu?style=flat&color=A8C3A0&labelColor=221F1B&label=" alt="GitHub stars" width="36" height="20" class="h-5 w-auto" loading="lazy" />
+      </a>
+    </div>
+
+    <div class="mt-10 md:mt-14 flex flex-wrap justify-center items-center gap-x-4 gap-y-2 text-xs font-mono text-stone-600">
+      <span>🦀 pure rust</span>
+      <span aria-hidden="true">·</span>
+      <span>zero config</span>
+      <span aria-hidden="true">·</span>
+      <span>reads stdin</span>
+      <span aria-hidden="true">·</span>
+      <span>MIT</span>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── what it does ───────────────────────── -->
+<section id="what" data-fade class="relative z-10 px-5 md:px-8 py-20 md:py-28 border-t border-stone-900">
+  <div class="max-w-5xl mx-auto grid md:grid-cols-[0.85fr_1.15fr] gap-10 md:gap-14 items-center">
+    <div class="min-w-0">
+      <p class="font-mono text-[0.65rem] md:text-xs uppercase tracking-[0.2em] text-terra mb-3">what it does</p>
+      <h2 class="font-display font-extrabold text-3xl sm:text-4xl md:text-5xl text-cream leading-tight mb-6">
+        Pipe in JSON.<br/>Get real types.
+      </h2>
+      <p class="text-stone-400 leading-relaxed mb-4">
+        degu parses one or more sample JSON documents, walks the tree, and merges every observation into a single shape. Fields present in some samples but missing in others become optional. A field that's sometimes <code class="text-sage">null</code> becomes nullable. An integer stays an integer.
+      </p>
+      <p class="text-stone-400 leading-relaxed">
+        Then it emits your format of choice — JSON Schema Draft 7, a TypeScript interface, or a Zod schema — straight to stdout.
+      </p>
+    </div>
+    <pre class="bg-ink2 border border-stone-800 rounded-md p-5 md:p-6 text-xs md:text-sm overflow-x-auto leading-relaxed min-w-0"><code><span class="tok-c">$ curl -s https://api.example.com/users/1 \</span>
+<span class="tok-c">    | degu -f typescript --name User</span>
+
+<span class="tok-k">export</span> <span class="tok-k">interface</span> <span class="tok-t">User</span> <span class="tok-p">{</span>
+  <span class="tok-v">id</span><span class="tok-p">:</span> <span class="tok-t">number</span><span class="tok-p">;</span>
+  <span class="tok-v">name</span><span class="tok-p">:</span> <span class="tok-t">string</span><span class="tok-p">;</span>
+  <span class="tok-v">email</span><span class="tok-p">?:</span> <span class="tok-t">string</span><span class="tok-p">;</span>
+  <span class="tok-v">tags</span><span class="tok-p">:</span> <span class="tok-t">string</span><span class="tok-p">[];</span>
+  <span class="tok-v">profile</span><span class="tok-p">:</span> <span class="tok-p">{</span>
+    <span class="tok-v">age</span><span class="tok-p">:</span> <span class="tok-t">number</span><span class="tok-p">;</span>
+    <span class="tok-v">city</span><span class="tok-p">:</span> <span class="tok-t">string</span><span class="tok-p">;</span>
+  <span class="tok-p">};</span>
+<span class="tok-p">}</span>
+</code></pre>
+  </div>
+</section>
+
+<!-- ───────────────────────── features ───────────────────────── -->
+<section id="features" data-fade class="relative z-10 px-5 md:px-8 py-20 md:py-28 border-t border-stone-900">
+  <div class="max-w-5xl mx-auto">
+    <p class="font-mono text-[0.65rem] md:text-xs uppercase tracking-[0.2em] text-terra mb-3">what degu sees</p>
+    <h2 class="font-display font-extrabold text-3xl sm:text-4xl md:text-5xl text-cream mb-14 md:mb-20 max-w-2xl leading-tight">
+      Three things degu<br/>figures out for you.
+    </h2>
+
+    <div class="space-y-20 md:space-y-24">
+
+      <!-- 001 merge semantics -->
+      <div class="grid md:grid-cols-2 gap-10 md:gap-14 items-center">
+        <div class="min-w-0">
+          <p class="font-mono text-xs text-butter mb-3">001 / merge semantics</p>
+          <h3 class="font-display font-bold text-2xl md:text-3xl text-cream mb-4 leading-tight">Optional fields, detected automatically.</h3>
+          <p class="text-stone-400 leading-relaxed">
+            Feed degu several samples of the same resource. A field that shows up in some samples but not others gets the <code class="text-sage">?</code> treatment. No more shipping interfaces where every property is required because you only looked at one response.
+          </p>
+        </div>
+        <pre class="bg-ink2 border border-stone-800 rounded-md p-5 text-xs md:text-sm overflow-x-auto leading-relaxed min-w-0"><code><span class="tok-c">$ cat a.json b.json</span>
+<span class="tok-p">{</span><span class="tok-s">"id"</span><span class="tok-p">:</span><span class="tok-n">1</span><span class="tok-p">,</span><span class="tok-s">"name"</span><span class="tok-p">:</span><span class="tok-s">"Ada"</span><span class="tok-p">,</span><span class="tok-s">"email"</span><span class="tok-p">:</span><span class="tok-s">"ada@x.com"</span><span class="tok-p">}</span>
+<span class="tok-p">{</span><span class="tok-s">"id"</span><span class="tok-p">:</span><span class="tok-n">2</span><span class="tok-p">,</span><span class="tok-s">"name"</span><span class="tok-p">:</span><span class="tok-s">"Grace"</span><span class="tok-p">}</span>
+
+<span class="tok-c">$ degu -f typescript --name User a.json b.json</span>
+<span class="tok-k">export</span> <span class="tok-k">interface</span> <span class="tok-t">User</span> <span class="tok-p">{</span>
+  <span class="tok-v">id</span><span class="tok-p">:</span> <span class="tok-t">number</span><span class="tok-p">;</span>
+  <span class="tok-v">name</span><span class="tok-p">:</span> <span class="tok-t">string</span><span class="tok-p">;</span>
+  <span class="tok-v">email</span><span class="tok-p">?:</span> <span class="tok-t">string</span><span class="tok-p">;</span>
+<span class="tok-p">}</span>
+</code></pre>
+      </div>
+
+      <!-- 002 formats -->
+      <div class="grid md:grid-cols-2 gap-10 md:gap-14 items-center">
+        <pre class="md:order-1 order-2 bg-ink2 border border-stone-800 rounded-md p-5 text-xs md:text-sm overflow-x-auto leading-relaxed min-w-0"><code><span class="tok-c">$ echo '{"id":42,"tags":["rust","cli"]}' \</span>
+<span class="tok-c">    | degu -f zod --name Post</span>
+
+<span class="tok-k">import</span> <span class="tok-p">{</span> <span class="tok-v">z</span> <span class="tok-p">}</span> <span class="tok-k">from</span> <span class="tok-s">"zod"</span><span class="tok-p">;</span>
+
+<span class="tok-k">export</span> <span class="tok-k">const</span> <span class="tok-t">Post</span> <span class="tok-p">=</span> <span class="tok-v">z</span><span class="tok-p">.</span><span class="tok-v">object</span><span class="tok-p">({</span>
+  <span class="tok-v">id</span><span class="tok-p">:</span> <span class="tok-v">z</span><span class="tok-p">.</span><span class="tok-v">number</span><span class="tok-p">().</span><span class="tok-v">int</span><span class="tok-p">(),</span>
+  <span class="tok-v">tags</span><span class="tok-p">:</span> <span class="tok-v">z</span><span class="tok-p">.</span><span class="tok-v">array</span><span class="tok-p">(</span><span class="tok-v">z</span><span class="tok-p">.</span><span class="tok-v">string</span><span class="tok-p">()),</span>
+<span class="tok-p">});</span>
+<span class="tok-k">export</span> <span class="tok-k">type</span> <span class="tok-t">Post</span> <span class="tok-p">=</span> <span class="tok-v">z</span><span class="tok-p">.</span><span class="tok-v">infer</span><span class="tok-p">&lt;</span><span class="tok-k">typeof</span> <span class="tok-t">Post</span><span class="tok-p">&gt;;</span>
+</code></pre>
+        <div class="md:order-2 order-1 min-w-0">
+          <p class="font-mono text-xs text-butter mb-3">002 / three formats</p>
+          <h3 class="font-display font-bold text-2xl md:text-3xl text-cream mb-4 leading-tight">JSON Schema, TypeScript, or Zod.</h3>
+          <p class="text-stone-400 leading-relaxed">
+            Pick your target with <code class="text-sage">-f</code>. JSON Schema Draft 7 for validators, a plain <code class="text-sage">export interface</code> for a TS codebase, or a full Zod schema with <code class="text-sage">.int()</code>, <code class="text-sage">.nullable()</code>, and a matching <code class="text-sage">z.infer</code> type alias.
+          </p>
+        </div>
+      </div>
+
+      <!-- 003 pipeable -->
+      <div class="grid md:grid-cols-2 gap-10 md:gap-14 items-center">
+        <div class="min-w-0">
+          <p class="font-mono text-xs text-butter mb-3">003 / pipeable</p>
+          <h3 class="font-display font-bold text-2xl md:text-3xl text-cream mb-4 leading-tight">From curl to types in one line.</h3>
+          <p class="text-stone-400 leading-relaxed">
+            degu reads stdin. Point <code class="text-sage">curl</code> at any undocumented endpoint, pipe it through degu, and paste the result into your editor. It never writes files and never asks for config.
+          </p>
+        </div>
+        <pre class="bg-ink2 border border-stone-800 rounded-md p-5 text-xs md:text-sm overflow-x-auto leading-relaxed min-w-0"><code><span class="tok-c">$ curl -s https://api.github.com/users/octocat \</span>
+<span class="tok-c">    | degu -f json-schema</span>
+
+<span class="tok-p">{</span>
+  <span class="tok-s">"$schema"</span><span class="tok-p">:</span> <span class="tok-s">"http://json-schema.org/draft-07/schema#"</span><span class="tok-p">,</span>
+  <span class="tok-s">"type"</span><span class="tok-p">:</span> <span class="tok-s">"object"</span><span class="tok-p">,</span>
+  <span class="tok-s">"properties"</span><span class="tok-p">:</span> <span class="tok-p">{</span>
+    <span class="tok-s">"login"</span><span class="tok-p">:</span> <span class="tok-p">{</span> <span class="tok-s">"type"</span><span class="tok-p">:</span> <span class="tok-s">"string"</span> <span class="tok-p">},</span>
+    <span class="tok-s">"id"</span><span class="tok-p">:</span> <span class="tok-p">{</span> <span class="tok-s">"type"</span><span class="tok-p">:</span> <span class="tok-s">"integer"</span> <span class="tok-p">},</span>
+    <span class="tok-c">...</span>
+  <span class="tok-p">}</span>
+<span class="tok-p">}</span>
+</code></pre>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── quick start ───────────────────────── -->
+<section id="install" data-fade class="relative z-10 px-5 md:px-8 py-20 md:py-28 border-t border-stone-900">
+  <div class="max-w-4xl mx-auto">
+    <p class="font-mono text-[0.65rem] md:text-xs uppercase tracking-[0.2em] text-terra mb-3">quick start</p>
+    <h2 class="font-display font-extrabold text-3xl sm:text-4xl md:text-5xl text-cream leading-tight mb-12 md:mb-14">
+      Install and infer<br/>in under a minute.
+    </h2>
+
+    <div class="space-y-10">
+
+      <div>
+        <div class="flex items-baseline gap-3 mb-3">
+          <span class="font-mono text-xs text-butter">01.</span>
+          <h3 class="font-display font-bold text-lg md:text-xl text-cream">Install from crates.io</h3>
+        </div>
+        <pre class="bg-ink2 border border-stone-800 rounded-md p-4 md:p-5 text-xs md:text-sm overflow-x-auto leading-relaxed"><code><span class="tok-c">$ </span>cargo install degu</code></pre>
+        <p class="text-xs text-stone-500 mt-2 font-mono">Requires Rust 1.70+. Single binary, no runtime.</p>
+      </div>
+
+      <div>
+        <div class="flex items-baseline gap-3 mb-3">
+          <span class="font-mono text-xs text-butter">02.</span>
+          <h3 class="font-display font-bold text-lg md:text-xl text-cream">Or build from source</h3>
+        </div>
+        <pre class="bg-ink2 border border-stone-800 rounded-md p-4 md:p-5 text-xs md:text-sm overflow-x-auto leading-relaxed"><code><span class="tok-c">$ </span>git clone https://github.com/iamkorun/degu.git
+<span class="tok-c">$ </span>cd degu
+<span class="tok-c">$ </span>cargo install --path .</code></pre>
+      </div>
+
+      <div>
+        <div class="flex items-baseline gap-3 mb-3">
+          <span class="font-mono text-xs text-butter">03.</span>
+          <h3 class="font-display font-bold text-lg md:text-xl text-cream">Run it</h3>
+        </div>
+        <pre class="bg-ink2 border border-stone-800 rounded-md p-4 md:p-5 text-xs md:text-sm overflow-x-auto leading-relaxed"><code><span class="tok-c"># infer a TypeScript interface from a file</span>
+<span class="tok-c">$ </span>degu -f typescript --name User user.json
+
+<span class="tok-c"># read from stdin</span>
+<span class="tok-c">$ </span>curl -s https://api.example.com/users/1 | degu -f typescript --name User
+
+<span class="tok-c"># merge multiple samples → optional fields</span>
+<span class="tok-c">$ </span>degu -f zod --name User sample1.json sample2.json</code></pre>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── real usage ───────────────────────── -->
+<section id="usage" data-fade class="relative z-10 px-5 md:px-8 py-20 md:py-28 border-t border-stone-900">
+  <div class="max-w-5xl mx-auto">
+    <p class="font-mono text-[0.65rem] md:text-xs uppercase tracking-[0.2em] text-terra mb-3">real usage</p>
+    <h2 class="font-display font-extrabold text-3xl sm:text-4xl md:text-5xl text-cream leading-tight mb-12 md:mb-14 max-w-2xl">
+      Wire it into<br/>your editor.
+    </h2>
+
+    <div class="grid md:grid-cols-2 gap-10 md:gap-12">
+
+      <div class="space-y-4 min-w-0">
+        <h3 class="font-display font-bold text-xl md:text-2xl text-cream leading-tight">Strict mode</h3>
+        <p class="text-stone-400 leading-relaxed text-sm md:text-base">
+          Treat every observed field as required and lock the shape down with <code class="text-sage">additionalProperties: false</code>. Useful when you want the schema to reject any field degu didn't see.
+        </p>
+        <pre class="bg-ink2 border border-stone-800 rounded-md p-4 md:p-5 text-xs md:text-sm overflow-x-auto leading-relaxed"><code><span class="tok-c">$ </span>degu --strict -f json-schema user.json</code></pre>
+      </div>
+
+      <div class="space-y-4 min-w-0">
+        <h3 class="font-display font-bold text-xl md:text-2xl text-cream leading-tight">Drop into your project</h3>
+        <p class="text-stone-400 leading-relaxed text-sm md:text-base">
+          Save a Zod schema straight into your source tree — now you have runtime validation and a TypeScript type from one command.
+        </p>
+        <pre class="bg-ink2 border border-stone-800 rounded-md p-4 md:p-5 text-xs md:text-sm overflow-x-auto leading-relaxed"><code><span class="tok-c">$ </span>curl -s $API/users/1 \
+    | degu -f zod --name User \
+    &gt; src/schemas/user.ts</code></pre>
+      </div>
+
+    </div>
+
+    <p class="text-stone-500 text-sm mt-12 md:mt-14 font-mono text-center">
+      → full flag reference in
+      <a href="https://github.com/iamkorun/degu#readme" class="text-sage hover:underline">the README</a>
+    </p>
+  </div>
+</section>
+
+</main>
+
+<!-- ───────────────────────── footer ───────────────────────── -->
+<footer class="relative z-10 px-5 md:px-8 py-14 border-t border-stone-900">
+  <div class="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+    <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm text-stone-500 font-mono">
+      <span class="flex items-center gap-2">
+        <svg viewBox="0 0 32 32" class="w-5 h-5 shrink-0" aria-hidden="true">
+          <ellipse cx="16" cy="19" rx="11" ry="9" fill="#A8C3A0"/>
+          <circle cx="9" cy="11" r="3" fill="#A8C3A0"/>
+          <circle cx="23" cy="11" r="3" fill="#A8C3A0"/>
+          <circle cx="12" cy="17" r="1.6" fill="#1C1A17"/>
+          <circle cx="20" cy="17" r="1.6" fill="#1C1A17"/>
+          <ellipse cx="16" cy="20.5" rx="1.6" ry="1.1" fill="#E07856"/>
+        </svg>
+        degu 🐹
+      </span>
+      <span aria-hidden="true">·</span>
+      <span>by <a href="https://github.com/iamkorun" class="text-sage hover:underline">@iamkorun</a></span>
+      <span aria-hidden="true">·</span>
+      <span>MIT</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <a href="https://github.com/iamkorun/degu/stargazers" class="tap" aria-label="Star degu on GitHub">
+        <img src="https://img.shields.io/github/stars/iamkorun/degu?style=social" alt="GitHub stars" width="90" height="20"/>
+      </a>
+      <a href="https://buymeacoffee.com/iamkorun" class="tap" aria-label="Buy me a coffee">
+        <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" width="160" height="40"/>
+      </a>
+    </div>
+  </div>
+</footer>
+
+<!-- ───────────────────────── scripts ───────────────────────── -->
+<script>
+  const btn      = document.getElementById('copy-btn');
+  const label    = document.getElementById('copy-label');
+  const labelTxt = document.getElementById('copy-text');
+  const fullCmd  = 'cargo install degu';
+
+  btn?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(fullCmd);
+      labelTxt.textContent = 'copied!';
+      label.classList.remove('text-stone-500');
+      label.classList.add('text-sage');
+      setTimeout(() => {
+        labelTxt.textContent = 'copy';
+        label.classList.add('text-stone-500');
+        label.classList.remove('text-sage');
+      }, 2000);
+    } catch (e) {
+      labelTxt.textContent = 'press ⌘C';
+    }
+  });
+
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (e.isIntersecting) {
+          e.target.classList.add('is-visible');
+          io.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
+
+    document.querySelectorAll('[data-fade]').forEach((el) => io.observe(el));
+  }
+</script>
+
+</body>
+</html>
