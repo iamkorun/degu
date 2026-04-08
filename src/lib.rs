@@ -3,7 +3,7 @@
 pub mod emit;
 pub mod shape;
 
-pub use emit::{Format, EmitOptions};
+pub use emit::{EmitOptions, Format};
 pub use shape::Shape;
 
 use anyhow::{Context, Result};
